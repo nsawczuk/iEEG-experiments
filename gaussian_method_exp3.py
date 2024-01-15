@@ -17,6 +17,7 @@ from sklearn import preprocessing
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import class_weight
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score
 from sklearn.metrics import recall_score
@@ -42,8 +43,13 @@ def get_timeSeries_trial(Data,k):
 
 def get_timeSeries(Data, electrodes):
     nTrials=len(Data['trial'].unique())
-    timeSeries= np.zeros((nTrials,3000,electrodes.shape[0]))
-    k=3000
+    if Data['tEnd'].max()<1.5:
+
+        timeSeries= np.zeros((nTrials,150,electrodes.shape[0]))
+        k=150
+    else:
+        timeSeries= np.zeros((nTrials,3000,electrodes.shape[0]))
+        k=3000
     for i in range(electrodes.shape[0]):
         auxData=Data[Data['Electrode name']==electrodes[i]]
         for j in range(nTrials):
@@ -71,14 +77,17 @@ def make_model(input_shape,units):
     return keras.models.Model(inputs=input_layer, outputs=output_layer)
 
 
-def gaussian_method(highgamma_recall,archivo):
+def gaussian_method(highgamma_recall,threshold, splits):
 
     highGamma_recall= pd.read_csv(highgamma_recall)
     bet= 'files_beta/'+highgamma_recall[6:-6]+'b.csv'
     beta_recall= pd.read_csv(bet)
-
     
-    electrodes= highGamma_recall['Electrode name'].unique()
+    archivo='file1/'+highgamma_recall[6:-19]+'lBA4hg.csv'
+	
+    
+
+#    y=np.array(highGamma.groupby('trial')['Recalled'].mean())
 
     acc_per_fold = []
     auc_per_fold = []
@@ -96,28 +105,30 @@ def gaussian_method(highgamma_recall,archivo):
     fold_no = 1
 
 	
+
+    recalls= np.array(pd.read_csv(archivo).groupby('trial')['Recalled'].mean())
+    electrodes= pd.read_csv(archivo)['Electrode name'].unique()
+    f=pd.DataFrame(columns=['subject','acc','auc', 'ppv', 'npv', 'sensitivity',' specificity', 'f1', 'units','method','positives','threshold'])    
+    y=[]
+    recalls_per_session=[]
     timeSeriesB=get_timeSeries(beta_recall,electrodes)
     timeSeriesHG= get_timeSeries(highGamma_recall,electrodes)
-    X= np.concatenate([timeSeriesHG,timeSeriesB],axis=2)
-    recalls= np.array(pd.read_csv(archivo).groupby('trial')['Recalled'].mean())
-    y=[]
+    X= np.concatenate([timeSeriesHG,timeSeriesB],axis=2)    
+    for i in range(highGamma_recall.trial.nunique()):
+    	recalls_per_session.append(recalls[i*12:i*12+12].sum())
 
-    for i in range(50):
-        if recalls[i*12:i*12+12].sum()<5:
+#    threshold=np.array(recalls_per_session).mean()
+            	
+    for i in range(len(recalls_per_session)):
+        if recalls_per_session[i]<1:
         	y.append(0)
         else:
         	y.append(1)
 
-    for j in range(X.shape[0]):
-    	for k in range(X.shape[2]):
-
-    		assert(X[j,:,k].sum()!=0)
-    
     y=np.array(y)
 
-    kfold = StratifiedKFold(n_splits= 5, shuffle=True , random_state=42)
-
-    for train, test in kfold.split(X,y):
+    rkf = RepeatedStratifiedKFold(n_splits=splits, n_repeats=5, random_state=2652124)
+    for i, (train, test) in enumerate(rkf.split(X,y)):    
         epochs = 70
         batch_size = 32
         optimizer = keras.optimizers.Adam(learning_rate=0.01)
@@ -132,7 +143,7 @@ def gaussian_method(highgamma_recall,archivo):
         y_train= y[train]
         y_test=y[test]
 
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, stratify=y_train, shuffle=True , random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, stratify=y_train, shuffle=True , random_state=42)
         scaler = preprocessing.StandardScaler()
         X_train = scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
         X_test = scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
@@ -194,15 +205,13 @@ def gaussian_method(highgamma_recall,archivo):
 
         loss_per_fold.append(scores[0])
 
-        ppv_per_fold.append(precision_score(y_test,y_pred))
+        ppv_per_fold.append(precision_score(y_test,y_pred,zero_division=0))
         npv_per_fold.append(npv)
         sensitivity_per_fold.append(recall_score(y_test,y_pred))
         f1_score_per_fold.append(f1_score(y_test,y_pred))
         specificity_per_fold.append(specif)
         fold_no= fold_no+1
+        f.loc[len(f.index)]=[highgamma_recall[6:-6], np.mean(acc_per_fold), np.mean(auc_per_fold),np.mean(ppv_per_fold),np.mean(npv_per_fold), np.mean(sensitivity_per_fold), np.mean(specificity_per_fold), np.mean(f1_score_per_fold),units,'gaussianconv', y.sum(), threshold]
+    f.to_csv("exp3results/results"+highgamma_recall[6:-6]+"_exp3_convgaussian.csv")    
 
-    f=pd.DataFrame(columns=['subject','acc','auc', 'ppv', 'npv', 'sensitivity',' specificity', 'f1', 'units','method','number of positives'])
-    f.loc[len(f.index)]=[highgamma_recall[6:-6], np.mean(acc_per_fold), np.mean(auc_per_fold),np.mean(ppv_per_fold),np.mean(npv_per_fold), np.mean(sensitivity_per_fold), np.mean(specificity_per_fold), np.mean(f1_score_per_fold),units,'gaussianconv', y.sum()]
-    f.to_csv("rescsv/results"+highgamma_recall[6:-6]+"_experiment3_convgaussian.csv")    
-
-gaussian_method(sys.argv[1],sys.argv[2])
+gaussian_method(sys.argv[1],sys.argv[2],sys.argv[3])

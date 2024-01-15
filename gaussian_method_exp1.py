@@ -15,6 +15,7 @@ from scipy.stats import spearmanr
 from sklearn.linear_model import LogisticRegression
 from sklearn import preprocessing
 from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.utils import class_weight
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import accuracy_score
@@ -43,7 +44,7 @@ def get_timeSeries_trial(Data,k):
 def get_timeSeries(Data, electrodes):
     nTrials=len(Data['trial'].unique())
     if Data['tEnd'].max()<1.5:
-#Some subjects have 1500-length signals instead of 3000
+
         timeSeries= np.zeros((nTrials,150,electrodes.shape[0]))
         k=150
     else:
@@ -94,13 +95,23 @@ def gaussian_method(highgamma):
     specificity_per_fold=[]
     units=[64,128,64]
 
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
 
     fold_no = 1
     timeSeriesB=get_timeSeries(beta,electrodes)
     timeSeriesHG= get_timeSeries(highGamma,electrodes)
     X= np.concatenate([timeSeriesHG,timeSeriesB],axis=2)
-    for train, test in kfold.split(X,y):
+    
+    sessions= int(len(y)/12)
+
+
+    rkf = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=2652124)
+    fold_no = 1
+    timeSeriesB=get_timeSeries(beta,electrodes)
+    timeSeriesHG= get_timeSeries(highGamma,electrodes)
+    X= np.concatenate([timeSeriesHG,timeSeriesB],axis=2)
+    for i, (train, test) in enumerate(rkf.split(X,y)):    
+
         epochs = 150
         batch_size = 128
         optimizer = keras.optimizers.Adam(learning_rate=0.01)
@@ -109,7 +120,6 @@ def gaussian_method(highgamma):
             keras.callbacks.EarlyStopping(monitor="val_loss", patience=25, verbose=1),]
         
 
-    
         X_train= X[train]
         X_test= X[test]
         y_train= y[train]
@@ -184,8 +194,8 @@ def gaussian_method(highgamma):
         specificity_per_fold.append(specif)
         fold_no= fold_no+1
 
-    f=pd.DataFrame(columns=['subject','acc','auc', 'ppv', 'npv', 'sensitivity',' specificity', 'f1', 'units','method'])
-    f.loc[len(f.index)]=[highgamma[6:-6], np.mean(acc_per_fold), np.mean(auc_per_fold),np.mean(ppv_per_fold),np.mean(npv_per_fold), np.mean(sensitivity_per_fold), np.mean(specificity_per_fold), np.mean(f1_score_per_fold),units,'gaussianconv']
-    f.to_csv("rescsv/results"+highgamma[6:-6]+"convgaussian.csv")    
+    f=pd.DataFrame(columns=['subject','acc','auc', 'ppv', 'npv', 'sensitivity',' specificity', 'f1', 'units','method','sessions'])
+    f.loc[len(f.index)]=[highgamma[6:-6], np.mean(acc_per_fold), np.mean(auc_per_fold),np.mean(ppv_per_fold),np.mean(npv_per_fold), np.mean(sensitivity_per_fold), np.mean(specificity_per_fold), np.mean(f1_score_per_fold),units,'gaussianconv', sessions]
+    f.to_csv("exp1results/results"+highgamma[6:-6]+"_exp1_convgaussian.csv")    
 
 gaussian_method(sys.argv[1])

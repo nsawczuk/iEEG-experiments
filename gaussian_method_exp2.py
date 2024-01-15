@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import sys 
+from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
 from sklearn.utils import class_weight
@@ -85,6 +86,17 @@ def gaussian_method(highgamma_encode, highgamma_recall):
     highGamma_recall= pd.read_csv(highgamma_recall)
     bet= 'files_beta/'+highgamma_recall[6:-6]+'b.csv'
     beta_recall= pd.read_csv(bet)
+    
+    if highGamma_recall['Electrode name'].iloc[0][0]=='[':
+        highGamma_recall['Electrode name']=highGamma_recall['Electrode name'].str[2:-2]
+    if beta_recall['Electrode name'].iloc[0][0]=='[':
+        beta_recall['Electrode name']=beta_recall['Electrode name'].str[2:-2]
+    if beta_encode['Electrode name'].iloc[0][0]=='[':
+        beta_encode['Electrode name']=beta_encode['Electrode name'].str[2:-2]
+    if highGamma_encode['Electrode name'].iloc[0][0]=='[':
+        highGamma_encode['Electrode name']=highGamma_encode['Electrode name'].str[2:-2]
+        
+        
     diccionario= highGamma_recall[['Session','start','trial']].set_index(['Session','start']).to_dict()
     beta_recall['new_col'] = list(zip(beta_recall.Session, beta_recall.start))
     beta_recall['trial']=beta_recall['new_col'].apply(lambda x: diccionario.get('trial').get(x))
@@ -127,19 +139,15 @@ def gaussian_method(highgamma_encode, highgamma_recall):
     timeSeriesHG= get_timeSeries(highGamma_recall,electrodes)
     X2= np.concatenate([timeSeriesHG,timeSeriesB],axis=2)
 
-
-    for j in range(X1.shape[0]):
-    	for k in range(X1.shape[2]):
-    		assert(X1[j,:,k].sum()!=0)
-    		assert(X2[j,:,k].sum()!=0)
     y2=np.ones(X2.shape[0])
     X= np.concatenate([X1,X2])
     y=np.concatenate([y1,y2])
-    kfold = StratifiedKFold(n_splits= 10, shuffle=True )#, random_state=42)
 
-    for train, test in kfold.split(X,y):
-        epochs = 70
+    rkf = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=2652124)
+    for i, (train, test) in enumerate(rkf.split(X,y)):    
+    
         batch_size = 128
+        epochs= 70
         optimizer = keras.optimizers.Adam(learning_rate=0.01)
         callbacks = [keras.callbacks.ReduceLROnPlateau(
                 monitor="val_loss", factor=0.5, patience=25, min_lr=0.0001    ),
@@ -223,6 +231,6 @@ def gaussian_method(highgamma_encode, highgamma_recall):
 
     f=pd.DataFrame(columns=['subject','acc','auc', 'ppv', 'npv', 'sensitivity',' specificity', 'f1', 'units','method'])
     f.loc[len(f.index)]=[highgamma_encode[6:-6], np.mean(acc_per_fold), np.mean(auc_per_fold),np.mean(ppv_per_fold),np.mean(npv_per_fold), np.mean(sensitivity_per_fold), np.mean(specificity_per_fold), np.mean(f1_score_per_fold),units,'gaussianconv']
-    f.to_csv("rescsv/results"+highgamma_encode[6:-6]+"_experimento2_convgaussian.csv")    
+    f.to_csv("exp2results/results"+highgamma_encode[6:-6]+"_exp2_convgaussian.csv")    
 
 gaussian_method(sys.argv[1],sys.argv[2])
