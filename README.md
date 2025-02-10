@@ -11,15 +11,15 @@ ML:
 
 (the high gamma files need to be in a ./files/ folder, the beta in ./files_beta/)
 
-Exp 1:
+Exp 1: Poor vs good encoding
 
 python gaussian_method_exp1.py files/highGammaEncode.csv
 
-Exp 2:
+Exp 2: Encoding vs recall
 
 python gaussian_method_exp2.py files/highGammaEncode.csv files/highGamma_recall_random.csv
 
-Exp3:
+Exp3: Good vs poor recall
 
 python3 gaussian_method_exp3.py files/highGamma_recall.csv threshold split
 
